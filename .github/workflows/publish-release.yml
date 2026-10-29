@@ -1,0 +1,38 @@
+﻿name: Publish release
+on:
+  workflow_dispatch:
+  push:
+    paths: ['Rovely-Setup-*.exe', '.github/workflows/publish-release.yml']
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SETUP=$(ls Rovely-Setup-*.exe | head -n 1)
+          VERSION=$(echo "$SETUP" | sed -E 's/Rovely-Setup-(.*)\.exe/\1/')
+          test -s "$SETUP"
+          SIZE=$(stat -c%s "$SETUP")
+          echo "setup=$SETUP version=$VERSION size=$SIZE"
+          test "$SIZE" -gt 50000000
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release upload "v$VERSION" "$SETUP" --clobber
+            gh release edit "v$VERSION" --draft=false --title "ROVELY Studio $VERSION" || true
+          else
+            gh release create "v$VERSION" "$SETUP" --title "ROVELY Studio $VERSION" --notes "Mise a jour ROVELY Studio $VERSION"
+          fi
+          for i in 1 2 3 4 5 6 7 8; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -L "https://github.com/${GITHUB_REPOSITORY}/releases/download/v$VERSION/$SETUP" || true)
+            echo "asset http=$code try=$i"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 3
+          done
+          exit 1
